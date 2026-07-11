@@ -1,9 +1,11 @@
 package com.checkout.payment.gateway.model;
 
 import com.checkout.payment.gateway.enums.PaymentStatus;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.util.UUID;
 
-public class GetPaymentResponse {
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class PaymentResponse {
   private UUID id;
   private PaymentStatus status;
   private String cardNumberLastFour;
@@ -70,7 +72,7 @@ public class GetPaymentResponse {
 
   @Override
   public String toString() {
-    return "GetPaymentResponse{" +
+    return "PaymentResponse{" +
         "id=" + id +
         ", status=" + status +
         ", cardNumberLastFour=" + cardNumberLastFour +

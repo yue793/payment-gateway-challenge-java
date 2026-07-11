@@ -4,10 +4,9 @@ import com.checkout.payment.gateway.client.AcquiringBankClient;
 import com.checkout.payment.gateway.enums.PaymentRequestStatus;
 import com.checkout.payment.gateway.enums.PaymentStatus;
 import com.checkout.payment.gateway.exception.EventProcessingException;
-import com.checkout.payment.gateway.model.GetPaymentResponse;
 import com.checkout.payment.gateway.model.PaymentRequest;
+import com.checkout.payment.gateway.model.PaymentResponse;
 import com.checkout.payment.gateway.model.PostPaymentRequest;
-import com.checkout.payment.gateway.model.PostPaymentResponse;
 import com.checkout.payment.gateway.model.bank.AcquiringBankRequest;
 import com.checkout.payment.gateway.model.bank.AcquiringBankResponse;
 import com.checkout.payment.gateway.repository.PaymentRequestRepository;
@@ -40,23 +39,15 @@ public class PaymentGatewayService {
     this.paymentRequestValidator = paymentRequestValidator;
   }
 
-  public GetPaymentResponse getPaymentById(UUID id) {
+  public PaymentResponse getPaymentById(UUID id) {
     LOG.debug("Requesting access to to payment with ID {}", id);
-    PostPaymentResponse payment = paymentsRepository.get(id)
+    PaymentResponse payment = paymentsRepository.get(id)
         .orElseThrow(() -> new EventProcessingException("Invalid ID"));
 
-    GetPaymentResponse response = new GetPaymentResponse();
-    response.setId(payment.getId());
-    response.setStatus(payment.getStatus());
-    response.setCardNumberLastFour(payment.getCardNumberLastFour());
-    response.setExpiryMonth(payment.getExpiryMonth());
-    response.setExpiryYear(payment.getExpiryYear());
-    response.setCurrency(payment.getCurrency());
-    response.setAmount(payment.getAmount());
-    return response;
+    return payment;
   }
 
-  public PostPaymentResponse processPayment(PostPaymentRequest postPaymentRequest) {
+  public PaymentResponse processPayment(PostPaymentRequest postPaymentRequest) {
     UUID requestId = UUID.randomUUID();
 
     // Step 1: Create and save request in INITIALIZING state
@@ -95,7 +86,7 @@ public class PaymentGatewayService {
     paymentRequestRepository.save(pr);
 
     // Step 6: Create Payment record and mark as COMPLETED
-    PostPaymentResponse response = buildGatewayResponse(
+    PaymentResponse response = buildGatewayResponse(
         postPaymentRequest,
         bankResponse.isAuthorised() ? PaymentStatus.AUTHORIZED : PaymentStatus.DECLINED);
 
@@ -118,9 +109,9 @@ public class PaymentGatewayService {
     );
   }
 
-  private PostPaymentResponse buildGatewayResponse(PostPaymentRequest postPaymentRequest,
+  private PaymentResponse buildGatewayResponse(PostPaymentRequest postPaymentRequest,
       PaymentStatus paymentStatus) {
-    PostPaymentResponse response = new PostPaymentResponse();
+    PaymentResponse response = new PaymentResponse();
     if (paymentStatus != PaymentStatus.REJECTED) {
       response.setId(UUID.randomUUID());
     }

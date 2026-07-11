@@ -8,8 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.checkout.payment.gateway.enums.PaymentStatus;
 import com.checkout.payment.gateway.exception.EventProcessingException;
-import com.checkout.payment.gateway.model.GetPaymentResponse;
-import com.checkout.payment.gateway.model.PostPaymentResponse;
+import com.checkout.payment.gateway.model.PaymentResponse;
 import com.checkout.payment.gateway.service.PaymentGatewayService;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -32,7 +31,7 @@ class PaymentGatewayControllerTest {
 
   @Test
   void whenPaymentWithIdExistThenCorrectPaymentIsReturned() throws Exception {
-    GetPaymentResponse payment = new GetPaymentResponse();
+    PaymentResponse payment = new PaymentResponse();
     payment.setId(UUID.randomUUID());
     payment.setAmount(10);
     payment.setCurrency("USD");
@@ -66,7 +65,7 @@ class PaymentGatewayControllerTest {
 
   @Test
   void whenPaymentRequestIsValidThenCreatedPaymentIsReturned() throws Exception {
-    PostPaymentResponse payment = new PostPaymentResponse();
+    PaymentResponse payment = new PaymentResponse();
     payment.setId(UUID.randomUUID());
     payment.setStatus(PaymentStatus.AUTHORIZED);
     payment.setCardNumberLastFour("1111");
@@ -96,7 +95,7 @@ class PaymentGatewayControllerTest {
 
   @Test
   void whenPaymentRequestIsInvalidThenBadRequestIsReturnedWithoutCallingService() throws Exception {
-    PostPaymentResponse rejectedPayment = new PostPaymentResponse();
+    PaymentResponse rejectedPayment = new PaymentResponse();
     rejectedPayment.setStatus(PaymentStatus.REJECTED);
     rejectedPayment.setCardNumberLastFour("11");
     rejectedPayment.setExpiryMonth(0);

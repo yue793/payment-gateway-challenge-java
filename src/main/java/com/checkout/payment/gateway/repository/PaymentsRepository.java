@@ -1,6 +1,6 @@
 package com.checkout.payment.gateway.repository;
 
-import com.checkout.payment.gateway.model.PostPaymentResponse;
+import com.checkout.payment.gateway.model.PaymentResponse;
 import java.util.Optional;
 import java.util.function.Supplier;
 import java.util.UUID;
@@ -11,15 +11,15 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PaymentsRepository {
 
-  private final ConcurrentMap<UUID, PostPaymentResponse> payments = new ConcurrentHashMap<>();
+  private final ConcurrentMap<UUID, PaymentResponse> payments = new ConcurrentHashMap<>();
 
-  public void add(PostPaymentResponse payment, Supplier<UUID> idGenerator) {
+  public void add(PaymentResponse payment, Supplier<UUID> idGenerator) {
     while (payments.putIfAbsent(payment.getId(), payment) != null) {
       payment.setId(idGenerator.get());
     }
   }
 
-  public Optional<PostPaymentResponse> get(UUID id) {
+  public Optional<PaymentResponse> get(UUID id) {
     return Optional.ofNullable(payments.get(id));
   }
 

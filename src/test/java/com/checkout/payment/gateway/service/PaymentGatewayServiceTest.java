@@ -12,10 +12,9 @@ import com.checkout.payment.gateway.client.AcquiringBankClient;
 import com.checkout.payment.gateway.enums.PaymentRequestStatus;
 import com.checkout.payment.gateway.enums.PaymentStatus;
 import com.checkout.payment.gateway.exception.EventProcessingException;
-import com.checkout.payment.gateway.model.GetPaymentResponse;
 import com.checkout.payment.gateway.model.PaymentRequest;
+import com.checkout.payment.gateway.model.PaymentResponse;
 import com.checkout.payment.gateway.model.PostPaymentRequest;
-import com.checkout.payment.gateway.model.PostPaymentResponse;
 import com.checkout.payment.gateway.model.bank.AcquiringBankResponse;
 import com.checkout.payment.gateway.repository.PaymentRequestRepository;
 import com.checkout.payment.gateway.repository.PaymentsRepository;
@@ -55,7 +54,7 @@ class PaymentGatewayServiceTest {
     when(acquiringBankClient.submitPayment(any()))
         .thenReturn(new AcquiringBankResponse(true, "bank-auth-code", "000"));
 
-    PostPaymentResponse response = paymentGatewayService.processPayment(request);
+    PaymentResponse response = paymentGatewayService.processPayment(request);
 
     assertNotNull(response.getId());
     assertEquals(PaymentStatus.AUTHORIZED, response.getStatus());
@@ -70,7 +69,7 @@ class PaymentGatewayServiceTest {
     when(acquiringBankClient.submitPayment(any()))
         .thenReturn(new AcquiringBankResponse(false, "", "000"));
 
-    PostPaymentResponse response = paymentGatewayService.processPayment(request);
+    PaymentResponse response = paymentGatewayService.processPayment(request);
 
     assertEquals(PaymentStatus.DECLINED, response.getStatus());
     assertEquals("1111", response.getCardNumberLastFour());
@@ -81,7 +80,7 @@ class PaymentGatewayServiceTest {
     PostPaymentRequest request = validRequest();
     request.setCurrency("AUD");
 
-    PostPaymentResponse response = paymentGatewayService.processPayment(request);
+    PaymentResponse response = paymentGatewayService.processPayment(request);
 
     assertEquals(null, response.getId());
     assertEquals(PaymentStatus.REJECTED, response.getStatus());
@@ -103,7 +102,7 @@ class PaymentGatewayServiceTest {
     when(acquiringBankClient.submitPayment(any()))
         .thenReturn(new AcquiringBankResponse(true, "bank-auth-code", "000"));
 
-    PostPaymentResponse response = paymentGatewayService.processPayment(request);
+    PaymentResponse response = paymentGatewayService.processPayment(request);
 
     var allRequests = paymentRequestRepository.getAll();
     assertEquals(1, allRequests.size());
@@ -152,9 +151,9 @@ class PaymentGatewayServiceTest {
     when(acquiringBankClient.submitPayment(any()))
         .thenReturn(new AcquiringBankResponse(true, "bank-auth-code", "000"));
 
-    PostPaymentResponse createdPayment = paymentGatewayService.processPayment(request);
+    PaymentResponse createdPayment = paymentGatewayService.processPayment(request);
 
-    GetPaymentResponse fetchedPayment = paymentGatewayService.getPaymentById(createdPayment.getId());
+    PaymentResponse fetchedPayment = paymentGatewayService.getPaymentById(createdPayment.getId());
 
     assertEquals(createdPayment.getId(), fetchedPayment.getId());
     assertEquals(createdPayment.getStatus(), fetchedPayment.getStatus());
