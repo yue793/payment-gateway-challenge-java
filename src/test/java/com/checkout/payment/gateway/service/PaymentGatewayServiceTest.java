@@ -14,9 +14,12 @@ import com.checkout.payment.gateway.exception.EventProcessingException;
 import com.checkout.payment.gateway.model.GetPaymentResponse;
 import com.checkout.payment.gateway.model.PostPaymentRequest;
 import com.checkout.payment.gateway.model.PostPaymentResponse;
+import com.checkout.payment.gateway.model.RejectedPaymentAttempt;
 import com.checkout.payment.gateway.model.bank.AcquiringBankResponse;
 import com.checkout.payment.gateway.repository.PaymentsRepository;
+import com.checkout.payment.gateway.repository.RejectedPaymentAttemptsRepository;
 import com.checkout.payment.gateway.validation.PaymentRequestValidator;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,16 +33,19 @@ class PaymentGatewayServiceTest {
   private AcquiringBankClient acquiringBankClient;
 
   private PaymentsRepository paymentsRepository;
+  private RejectedPaymentAttemptsRepository rejectedPaymentAttemptsRepository;
   private PaymentRequestValidator paymentRequestValidator;
   private PaymentGatewayService paymentGatewayService;
 
   @BeforeEach
   void setUp() {
     paymentsRepository = new PaymentsRepository();
+    rejectedPaymentAttemptsRepository = new RejectedPaymentAttemptsRepository();
     paymentRequestValidator = new PaymentRequestValidator();
     paymentGatewayService = new PaymentGatewayService(
         acquiringBankClient,
         paymentsRepository,
+      rejectedPaymentAttemptsRepository,
         paymentRequestValidator);
   }
 
@@ -71,15 +77,22 @@ class PaymentGatewayServiceTest {
   }
 
   @Test
-  void processPaymentStoresRejectedPaymentWithoutCallingBank() {
+  void processPaymentStoresRejectedAttemptWithoutCallingBank() {
     PostPaymentRequest request = validRequest();
     request.setCurrency("AUD");
 
     PostPaymentResponse response = paymentGatewayService.processPayment(request);
 
-    assertNotNull(response.getId());
+    assertEquals(null, response.getId());
     assertEquals(PaymentStatus.REJECTED, response.getStatus());
     assertEquals("1111", response.getCardNumberLastFour());
+    assertThrows(EventProcessingException.class,
+        () -> paymentGatewayService.getPaymentById(java.util.UUID.randomUUID()));
+
+    List<RejectedPaymentAttempt> rejectedAttempts = rejectedPaymentAttemptsRepository.getAll();
+    assertEquals(1, rejectedAttempts.size());
+    assertEquals("1111", rejectedAttempts.getFirst().getCardNumberLastFour());
+    assertEquals("AUD", rejectedAttempts.getFirst().getCurrency());
     verify(acquiringBankClient, never()).submitPayment(any());
   }
 

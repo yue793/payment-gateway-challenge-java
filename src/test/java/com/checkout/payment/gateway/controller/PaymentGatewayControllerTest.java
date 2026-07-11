@@ -97,7 +97,6 @@ class PaymentGatewayControllerTest {
   @Test
   void whenPaymentRequestIsInvalidThenBadRequestIsReturnedWithoutCallingService() throws Exception {
     PostPaymentResponse rejectedPayment = new PostPaymentResponse();
-    rejectedPayment.setId(UUID.randomUUID());
     rejectedPayment.setStatus(PaymentStatus.REJECTED);
     rejectedPayment.setCardNumberLastFour("11");
     rejectedPayment.setExpiryMonth(0);
@@ -120,7 +119,8 @@ class PaymentGatewayControllerTest {
                 }
                 """))
         .andExpect(status().isCreated())
-        .andExpect(jsonPath("$.status").value("Rejected"));
+              .andExpect(jsonPath("$.status").value("Rejected"))
+              .andExpect(jsonPath("$.id").doesNotExist());
 
     verify(paymentGatewayService).processPayment(any());
   }

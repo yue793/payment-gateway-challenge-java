@@ -84,7 +84,8 @@ class PaymentGatewayApiIntegrationTest {
             .content(validPayload("4111111111111111", "AUD", 1050, "123")))
         .andExpect(status().isCreated())
         .andExpect(jsonPath("$.status").value("Rejected"))
-        .andExpect(jsonPath("$.cardNumberLastFour").value("1111"));
+      .andExpect(jsonPath("$.cardNumberLastFour").value("1111"))
+      .andExpect(jsonPath("$.id").doesNotExist());
   }
 
   @Test
