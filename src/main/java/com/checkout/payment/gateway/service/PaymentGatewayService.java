@@ -56,35 +56,29 @@ public class PaymentGatewayService {
     return response;
   }
 
-  public PostPaymentResponse processPayment(PostPaymentRequest paymentRequest) {
+  public PostPaymentResponse processPayment(PostPaymentRequest postPaymentRequest) {
     UUID requestId = UUID.randomUUID();
 
     // Step 1: Create and save request in INITIALIZING state
     PaymentRequest pr = new PaymentRequest();
     pr.setId(requestId);
     pr.setStatus(PaymentRequestStatus.INITIALIZING);
-    pr.setRequestData(paymentRequest);
+    pr.setRequestData(postPaymentRequest);
     pr.setCreatedAt(Instant.now());
     paymentRequestRepository.save(pr);
 
-    if (paymentRequest == null) {
-      LOG.info("Rejecting payment request {}: null request", requestId);
-      pr.setStatus(PaymentRequestStatus.REJECTED);
-      pr.setRejectionReason("Null payment request");
-      paymentRequestRepository.save(pr);
-      return buildGatewayResponse(null, PaymentStatus.REJECTED);
-    }
-
     LOG.debug("Processing payment request {} - Amount: {}, Currency: {}",
-        requestId, paymentRequest.getAmount(), paymentRequest.getCurrency());
+        requestId, postPaymentRequest != null ? postPaymentRequest.getAmount() : "null",
+        postPaymentRequest != null ? postPaymentRequest.getCurrency() : "null");
 
-    // Step 2: Validate and reject if invalid
-    if (!paymentRequestValidator.isValid(paymentRequest)) {
-      LOG.info("Rejecting payment request {}: validation failed", requestId);
+    // Step 2: Validate and reject if invalid or null
+    if (postPaymentRequest == null || !paymentRequestValidator.isValid(postPaymentRequest)) {
+      String rejectionReason = postPaymentRequest == null ? "Null payment request" : "Invalid payment request";
+      LOG.info("Rejecting payment request {}: {}", requestId, rejectionReason);
       pr.setStatus(PaymentRequestStatus.REJECTED);
-      pr.setRejectionReason("Invalid payment request");
+      pr.setRejectionReason(rejectionReason);
       paymentRequestRepository.save(pr);
-      return buildGatewayResponse(paymentRequest, PaymentStatus.REJECTED);
+      return buildGatewayResponse(postPaymentRequest, PaymentStatus.REJECTED);
     }
 
     // Step 3: Move to IN_PROGRESS before calling bank
@@ -93,46 +87,52 @@ public class PaymentGatewayService {
     paymentRequestRepository.save(pr);
 
     // Step 4: Call acquiring bank
-    AcquiringBankResponse bankResponse = acquiringBankClient.submitPayment(toBankRequest(paymentRequest));
+    AcquiringBankResponse bankResponse = acquiringBankClient.submitPayment(toBankRequest(postPaymentRequest));
 
-    // Step 5: Mark as COMPLETED and create Payment record
-    LOG.debug("Payment request {} completed with bank response: authorized={}", requestId, bankResponse.isAuthorised());
-    pr.setStatus(PaymentRequestStatus.COMPLETED);
+    // Step 5: Mark as RECEIVED (response received but not yet persisted)
+    LOG.debug("Payment request {} received bank response: authorized={}, marking RECEIVED", requestId, bankResponse.isAuthorised());
+    pr.setStatus(PaymentRequestStatus.RECEIVED);
     paymentRequestRepository.save(pr);
 
+    // Step 6: Create Payment record and mark as COMPLETED
     PostPaymentResponse response = buildGatewayResponse(
-        paymentRequest,
+        postPaymentRequest,
         bankResponse.isAuthorised() ? PaymentStatus.AUTHORIZED : PaymentStatus.DECLINED);
 
     paymentsRepository.add(response, UUID::randomUUID);
+
+    pr.setStatus(PaymentRequestStatus.COMPLETED);
+    paymentRequestRepository.save(pr);
+    LOG.debug("Payment request {} completed and persisted", requestId);
+
     return response;
   }
 
-  private AcquiringBankRequest toBankRequest(PostPaymentRequest paymentRequest) {
+  private AcquiringBankRequest toBankRequest(PostPaymentRequest postPaymentRequest) {
     return new AcquiringBankRequest(
-        paymentRequest.getCardNumber(),
-        paymentRequest.getExpiryDate(),
-        paymentRequest.getCurrency().toUpperCase(Locale.ROOT),
-        paymentRequest.getAmount(),
-        Integer.parseInt(paymentRequest.getCvv())
+        postPaymentRequest.getCardNumber(),
+        postPaymentRequest.getExpiryDate(),
+        postPaymentRequest.getCurrency().toUpperCase(Locale.ROOT),
+        postPaymentRequest.getAmount(),
+        Integer.parseInt(postPaymentRequest.getCvv())
     );
   }
 
-  private PostPaymentResponse buildGatewayResponse(PostPaymentRequest paymentRequest,
+  private PostPaymentResponse buildGatewayResponse(PostPaymentRequest postPaymentRequest,
       PaymentStatus paymentStatus) {
     PostPaymentResponse response = new PostPaymentResponse();
     if (paymentStatus != PaymentStatus.REJECTED) {
       response.setId(UUID.randomUUID());
     }
     response.setStatus(paymentStatus);
-    response.setCardNumberLastFour(paymentRequest == null ? "" : paymentRequest.getCardNumberLastFour());
-    response.setExpiryMonth(paymentRequest == null || paymentRequest.getExpiryMonth() == null
-        ? 0 : paymentRequest.getExpiryMonth());
-    response.setExpiryYear(paymentRequest == null || paymentRequest.getExpiryYear() == null
-        ? 0 : paymentRequest.getExpiryYear());
-    response.setCurrency(paymentRequest == null ? null : paymentRequest.getCurrency());
-    response.setAmount(paymentRequest == null || paymentRequest.getAmount() == null
-        ? 0 : paymentRequest.getAmount());
+    response.setCardNumberLastFour(postPaymentRequest == null ? "" : postPaymentRequest.getCardNumberLastFour());
+    response.setExpiryMonth(postPaymentRequest == null || postPaymentRequest.getExpiryMonth() == null
+        ? 0 : postPaymentRequest.getExpiryMonth());
+    response.setExpiryYear(postPaymentRequest == null || postPaymentRequest.getExpiryYear() == null
+        ? 0 : postPaymentRequest.getExpiryYear());
+    response.setCurrency(postPaymentRequest == null ? null : postPaymentRequest.getCurrency());
+    response.setAmount(postPaymentRequest == null || postPaymentRequest.getAmount() == null
+        ? 0 : postPaymentRequest.getAmount());
     return response;
   }
 }

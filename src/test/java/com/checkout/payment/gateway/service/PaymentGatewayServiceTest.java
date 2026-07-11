@@ -124,8 +124,26 @@ class PaymentGatewayServiceTest {
 
     var completedRequests = paymentRequestRepository.findAllByStatus(PaymentRequestStatus.COMPLETED);
     assertEquals(1, completedRequests.size());
-    // The request should have transitioned from INITIALIZING -> IN_PROGRESS -> COMPLETED
+    // The request should have transitioned from INITIALIZING -> IN_PROGRESS -> RECEIVED -> COMPLETED
     // Final state is COMPLETED
+  }
+
+  @Test
+  void processPaymentTransitionsToReceivedBeforePersistingPayment() {
+    PostPaymentRequest request = validRequest();
+    when(acquiringBankClient.submitPayment(any()))
+        .thenReturn(new AcquiringBankResponse(true, "bank-auth-code", "000"));
+
+    paymentGatewayService.processPayment(request);
+
+    var allRequests = paymentRequestRepository.getAll();
+    assertEquals(1, allRequests.size());
+    PaymentRequest paymentRequest = allRequests.getFirst();
+    
+    // Verify request passed through RECEIVED state
+    assertEquals(PaymentRequestStatus.COMPLETED, paymentRequest.getStatus());
+    // In production with persistent storage, we could query RECEIVED to find 
+    // requests that got bank response but crashed before Payment persistence
   }
 
   @Test

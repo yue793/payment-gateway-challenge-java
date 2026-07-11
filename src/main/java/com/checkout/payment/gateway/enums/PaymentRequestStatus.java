@@ -4,6 +4,7 @@ public enum PaymentRequestStatus {
   INITIALIZING("Initializing"),
   REJECTED("Rejected"),
   IN_PROGRESS("InProgress"),
+  RECEIVED("Received"),
   COMPLETED("Completed");
 
   private final String name;
