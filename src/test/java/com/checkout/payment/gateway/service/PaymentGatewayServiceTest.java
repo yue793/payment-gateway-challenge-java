@@ -9,17 +9,17 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.checkout.payment.gateway.client.AcquiringBankClient;
+import com.checkout.payment.gateway.enums.PaymentRequestStatus;
 import com.checkout.payment.gateway.enums.PaymentStatus;
 import com.checkout.payment.gateway.exception.EventProcessingException;
 import com.checkout.payment.gateway.model.GetPaymentResponse;
+import com.checkout.payment.gateway.model.PaymentRequest;
 import com.checkout.payment.gateway.model.PostPaymentRequest;
 import com.checkout.payment.gateway.model.PostPaymentResponse;
-import com.checkout.payment.gateway.model.RejectedPaymentAttempt;
 import com.checkout.payment.gateway.model.bank.AcquiringBankResponse;
+import com.checkout.payment.gateway.repository.PaymentRequestRepository;
 import com.checkout.payment.gateway.repository.PaymentsRepository;
-import com.checkout.payment.gateway.repository.RejectedPaymentAttemptsRepository;
 import com.checkout.payment.gateway.validation.PaymentRequestValidator;
-import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,20 +32,20 @@ class PaymentGatewayServiceTest {
   @Mock
   private AcquiringBankClient acquiringBankClient;
 
+  private PaymentRequestRepository paymentRequestRepository;
   private PaymentsRepository paymentsRepository;
-  private RejectedPaymentAttemptsRepository rejectedPaymentAttemptsRepository;
   private PaymentRequestValidator paymentRequestValidator;
   private PaymentGatewayService paymentGatewayService;
 
   @BeforeEach
   void setUp() {
+    paymentRequestRepository = new PaymentRequestRepository();
     paymentsRepository = new PaymentsRepository();
-    rejectedPaymentAttemptsRepository = new RejectedPaymentAttemptsRepository();
     paymentRequestValidator = new PaymentRequestValidator();
     paymentGatewayService = new PaymentGatewayService(
         acquiringBankClient,
+        paymentRequestRepository,
         paymentsRepository,
-      rejectedPaymentAttemptsRepository,
         paymentRequestValidator);
   }
 
@@ -89,11 +89,43 @@ class PaymentGatewayServiceTest {
     assertThrows(EventProcessingException.class,
         () -> paymentGatewayService.getPaymentById(java.util.UUID.randomUUID()));
 
-    List<RejectedPaymentAttempt> rejectedAttempts = rejectedPaymentAttemptsRepository.getAll();
-    assertEquals(1, rejectedAttempts.size());
-    assertEquals("1111", rejectedAttempts.getFirst().getCardNumberLastFour());
-    assertEquals("AUD", rejectedAttempts.getFirst().getCurrency());
+    var rejectedRequests = paymentRequestRepository.findAllByStatus(PaymentRequestStatus.REJECTED);
+    assertEquals(1, rejectedRequests.size());
+    assertEquals("1111", rejectedRequests.getFirst().getRequestData().getCardNumberLastFour());
+    assertEquals("AUD", rejectedRequests.getFirst().getRequestData().getCurrency());
+    assertEquals(PaymentRequestStatus.REJECTED, rejectedRequests.getFirst().getStatus());
     verify(acquiringBankClient, never()).submitPayment(any());
+  }
+
+  @Test
+  void processPaymentTransitionsPaymentRequestThroughStates() {
+    PostPaymentRequest request = validRequest();
+    when(acquiringBankClient.submitPayment(any()))
+        .thenReturn(new AcquiringBankResponse(true, "bank-auth-code", "000"));
+
+    PostPaymentResponse response = paymentGatewayService.processPayment(request);
+
+    var allRequests = paymentRequestRepository.getAll();
+    assertEquals(1, allRequests.size());
+    
+    PaymentRequest paymentRequest = allRequests.getFirst();
+    assertEquals(PaymentRequestStatus.COMPLETED, paymentRequest.getStatus());
+    assertNotNull(paymentRequest.getCreatedAt());
+    assertNotNull(paymentRequest.getUpdatedAt());
+  }
+
+  @Test
+  void processPaymentTracksInProgressBeforeBankCall() {
+    PostPaymentRequest request = validRequest();
+    when(acquiringBankClient.submitPayment(any()))
+        .thenReturn(new AcquiringBankResponse(true, "bank-auth-code", "000"));
+
+    paymentGatewayService.processPayment(request);
+
+    var completedRequests = paymentRequestRepository.findAllByStatus(PaymentRequestStatus.COMPLETED);
+    assertEquals(1, completedRequests.size());
+    // The request should have transitioned from INITIALIZING -> IN_PROGRESS -> COMPLETED
+    // Final state is COMPLETED
   }
 
   @Test

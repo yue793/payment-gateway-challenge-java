@@ -1,16 +1,17 @@
 package com.checkout.payment.gateway.service;
 
 import com.checkout.payment.gateway.client.AcquiringBankClient;
+import com.checkout.payment.gateway.enums.PaymentRequestStatus;
 import com.checkout.payment.gateway.enums.PaymentStatus;
 import com.checkout.payment.gateway.exception.EventProcessingException;
 import com.checkout.payment.gateway.model.GetPaymentResponse;
+import com.checkout.payment.gateway.model.PaymentRequest;
 import com.checkout.payment.gateway.model.PostPaymentRequest;
 import com.checkout.payment.gateway.model.PostPaymentResponse;
-import com.checkout.payment.gateway.model.RejectedPaymentAttempt;
 import com.checkout.payment.gateway.model.bank.AcquiringBankRequest;
 import com.checkout.payment.gateway.model.bank.AcquiringBankResponse;
+import com.checkout.payment.gateway.repository.PaymentRequestRepository;
 import com.checkout.payment.gateway.repository.PaymentsRepository;
-import com.checkout.payment.gateway.repository.RejectedPaymentAttemptsRepository;
 import com.checkout.payment.gateway.validation.PaymentRequestValidator;
 import java.time.Instant;
 import java.util.Locale;
@@ -25,17 +26,17 @@ public class PaymentGatewayService {
   private static final Logger LOG = LoggerFactory.getLogger(PaymentGatewayService.class);
 
   private final AcquiringBankClient acquiringBankClient;
+  private final PaymentRequestRepository paymentRequestRepository;
   private final PaymentsRepository paymentsRepository;
-  private final RejectedPaymentAttemptsRepository rejectedPaymentAttemptsRepository;
   private final PaymentRequestValidator paymentRequestValidator;
 
   public PaymentGatewayService(AcquiringBankClient acquiringBankClient,
+      PaymentRequestRepository paymentRequestRepository,
       PaymentsRepository paymentsRepository,
-      RejectedPaymentAttemptsRepository rejectedPaymentAttemptsRepository,
       PaymentRequestValidator paymentRequestValidator) {
     this.acquiringBankClient = acquiringBankClient;
+    this.paymentRequestRepository = paymentRequestRepository;
     this.paymentsRepository = paymentsRepository;
-    this.rejectedPaymentAttemptsRepository = rejectedPaymentAttemptsRepository;
     this.paymentRequestValidator = paymentRequestValidator;
   }
 
@@ -56,24 +57,49 @@ public class PaymentGatewayService {
   }
 
   public PostPaymentResponse processPayment(PostPaymentRequest paymentRequest) {
+    UUID requestId = UUID.randomUUID();
+
+    // Step 1: Create and save request in INITIALIZING state
+    PaymentRequest pr = new PaymentRequest();
+    pr.setId(requestId);
+    pr.setStatus(PaymentRequestStatus.INITIALIZING);
+    pr.setRequestData(paymentRequest);
+    pr.setCreatedAt(Instant.now());
+    paymentRequestRepository.save(pr);
+
     if (paymentRequest == null) {
-      LOG.info("Rejecting payment: null request");
-      RejectedPaymentAttempt rejectedAttempt = buildRejectedAttempt(null);
-      rejectedPaymentAttemptsRepository.add(rejectedAttempt);
+      LOG.info("Rejecting payment request {}: null request", requestId);
+      pr.setStatus(PaymentRequestStatus.REJECTED);
+      pr.setRejectionReason("Null payment request");
+      paymentRequestRepository.save(pr);
       return buildGatewayResponse(null, PaymentStatus.REJECTED);
     }
 
-    LOG.debug("Processing payment - Amount: {}, Currency: {}",
-        paymentRequest.getAmount(), paymentRequest.getCurrency());
+    LOG.debug("Processing payment request {} - Amount: {}, Currency: {}",
+        requestId, paymentRequest.getAmount(), paymentRequest.getCurrency());
 
+    // Step 2: Validate and reject if invalid
     if (!paymentRequestValidator.isValid(paymentRequest)) {
-      LOG.info("Rejecting payment before bank call due to invalid input");
-      RejectedPaymentAttempt rejectedAttempt = buildRejectedAttempt(paymentRequest);
-      rejectedPaymentAttemptsRepository.add(rejectedAttempt);
+      LOG.info("Rejecting payment request {}: validation failed", requestId);
+      pr.setStatus(PaymentRequestStatus.REJECTED);
+      pr.setRejectionReason("Invalid payment request");
+      paymentRequestRepository.save(pr);
       return buildGatewayResponse(paymentRequest, PaymentStatus.REJECTED);
     }
 
+    // Step 3: Move to IN_PROGRESS before calling bank
+    LOG.debug("Payment request {} moving to IN_PROGRESS, calling acquiring bank", requestId);
+    pr.setStatus(PaymentRequestStatus.IN_PROGRESS);
+    paymentRequestRepository.save(pr);
+
+    // Step 4: Call acquiring bank
     AcquiringBankResponse bankResponse = acquiringBankClient.submitPayment(toBankRequest(paymentRequest));
+
+    // Step 5: Mark as COMPLETED and create Payment record
+    LOG.debug("Payment request {} completed with bank response: authorized={}", requestId, bankResponse.isAuthorised());
+    pr.setStatus(PaymentRequestStatus.COMPLETED);
+    paymentRequestRepository.save(pr);
+
     PostPaymentResponse response = buildGatewayResponse(
         paymentRequest,
         bankResponse.isAuthorised() ? PaymentStatus.AUTHORIZED : PaymentStatus.DECLINED);
@@ -109,19 +135,5 @@ public class PaymentGatewayService {
         ? 0 : paymentRequest.getAmount());
     return response;
   }
-
-  private RejectedPaymentAttempt buildRejectedAttempt(PostPaymentRequest paymentRequest) {
-    RejectedPaymentAttempt attempt = new RejectedPaymentAttempt();
-    attempt.setId(UUID.randomUUID());
-    attempt.setRejectedAt(Instant.now());
-    attempt.setCardNumberLastFour(paymentRequest == null ? "" : paymentRequest.getCardNumberLastFour());
-    attempt.setExpiryMonth(paymentRequest == null || paymentRequest.getExpiryMonth() == null
-        ? 0 : paymentRequest.getExpiryMonth());
-    attempt.setExpiryYear(paymentRequest == null || paymentRequest.getExpiryYear() == null
-        ? 0 : paymentRequest.getExpiryYear());
-    attempt.setCurrency(paymentRequest == null ? null : paymentRequest.getCurrency());
-    attempt.setAmount(paymentRequest == null || paymentRequest.getAmount() == null
-        ? 0 : paymentRequest.getAmount());
-    return attempt;
-  }
 }
+
